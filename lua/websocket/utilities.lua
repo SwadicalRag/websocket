@@ -15,7 +15,7 @@ local utilities = websocket.utilities
 
 local assert, type, error = assert, type, error
 local concat = table.concat
-local byte, find, match, lower = string.byte, string.find, string.match, string.lower
+local char, byte, find, match, lower = string.char, string.byte, string.find, string.match, string.lower
 local bxor = bit.bxor
 
 utilities.Base64Encode = util.Base64Encode
@@ -30,7 +30,7 @@ end
 function utilities.XORMask(data, mask)
 	local transformed = {}
 	for i = 1, #data do
-		transformed[i] = bxor(byte(data, i), mask[(i - 1) % 4 + 1])
+		transformed[i] = char(bxor(byte(data, i), mask[(i - 1) % 4 + 1]))
 	end
 
 	return concat(transformed)
