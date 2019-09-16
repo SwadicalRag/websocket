@@ -105,6 +105,13 @@ function CONNECTION:Think()
 					)
 					self.state = self.socket:send(key) == #key and OPEN or CLOSED
 				else
+					-- could do a callback to allow the user to customise the response
+					-- but this is a **websocket** server library, not a http server library
+					-- so I believe this is out of scope.
+					self.socket:send(format(
+						"HTTP/1.1 200 OK\r\nConnection: %s\r\n\r\nHello, you have reached gm_websocket :)\r\n\r\n",
+						httpData.headers["connection"]
+					))
 					self:Shutdown()
 				end
 			end
