@@ -4,7 +4,7 @@ local utilities = websocket.utilities
 
 local socket = require("socket") or socket
 
-local insert, remove = table.insert, table.remove
+local insert, remove, concat = table.insert, table.remove, table.concat
 local format = string.format
 local setmetatable, assert, print = setmetatable, assert, print
 local hook_Add, hook_Remove = hook.Add, hook.Remove
@@ -72,7 +72,82 @@ function CONNECTION:Receive(pattern)
 	return err and part or data, err
 end
 
-function CONNECTION:Think()
+function CONNECTION:ReceiveEx(len)
+	local out = ""
+	local err,buf
+
+	while len > 0 do
+		buf,err = self:Receive(len)
+
+		if not err then
+			out = out..buf
+			len = len - #buf
+		elseif err ~= "timeout" then
+			return err
+		end
+
+		coroutine.yield()
+	end
+
+	return nil,out
+end
+
+function CONNECTION:ReadFrame()
+	-- Based off https://github.com/lipp/lua-websockets/blob/master/src/websocket/sync.lua#L8
+	local first_opcode
+	local frames
+	local bytes = 3
+	local encoded = ''
+
+	local clean = function(was_clean,code,reason)
+		self.state = state.CLOSED
+		self:Shutdown()
+		return nil,nil,was_clean,code,reason or "closed"
+	end
+
+	while true do
+		local err,chunk = self:ReceiveEx(bytes - #encoded)
+		if err then
+			return clean(false,1006,err)
+		end
+		encoded = encoded..chunk
+		local decoded,length,opcode,masked,fin,mask = DecodeHeader(encoded)
+		if decoded then
+			err,decoded = self:ReceiveEx(length)
+			if masked then
+				decoded = XORMask(decoded,mask)
+			end
+
+			assert(not err,"ReadFrame() -> ReceiveEx() error")
+			if opcode == frame.CLOSE then
+				error("TODO: websocket close opcode")
+			end
+			if not first_opcode then
+				first_opcode = opcode
+			end
+			if not fin then
+				if not frames then
+					frames = {}
+				elseif opcode ~= frame.CONTINUATION then
+					return clean(false,1002,"protocol error")
+				end
+				bytes = 3
+				encoded = ""
+				insert(frames,decoded)
+			elseif not frames then
+				return decoded,first_opcode
+			else
+				insert(frames,decoded)
+				return concat(frames),first_opcode
+			end
+		else
+			assert(type(length) == "number" and length > 0)
+			bytes = length
+		end
+	end
+end
+
+function CONNECTION:ThinkFactory()
 	if not self:IsValid() then
 		return
 	end
@@ -119,30 +194,9 @@ function CONNECTION:Think()
 			print("websocket auth error: " .. err)
 		end
 	elseif self.state == OPEN then
-		local header, err = self:Receive(2)
-		if err == nil then
-			local complete, length, opcode, masked, fin, mask = DecodeHeader(header)
-			local data, err = self:Receive(length - (complete and 0 or 2))
-			if err == nil then
-				if complete and self.recvcallback then
-					self.recvcallback(self, data, opcode, masked, fin)
-				elseif not complete then
-					complete, length, opcode, masked, fin, mask = DecodeHeader(header .. data)
-					data, err = self:Receive(length)
-					if err == nil then
-						if complete then
-							data = masked and XORMask(data, mask) or data
-							self.recvcallback(self, data, opcode, masked, fin)
-						else
-							print("websocket completion error: something went terribly wrong")
-						end
-					else
-						print("websocket real data error: " .. err)
-					end
-				end
-			else
-				print("websocket data error: " .. err)
-			end
+		local decoded,firstOpcode = self:ReadFrame()
+		if decoded and self.recvcallback then
+			self.recvcallback(self, decoded)
 		end
 	end
 end
@@ -187,6 +241,18 @@ function SERVER:Think()
 			server = self,
 			state = CONNECTING
 		}, CONNECTION)
+
+		connection.Think = coroutine.wrap(function(...)
+			while true do
+				local suc,err = xpcall(connection.ThinkFactory,debug.traceback,...)
+
+				if not suc then
+					ErrorNoHalt(err.."\n")
+				end
+
+				coroutine.yield()
+			end
+		end)
 
 		if self.acceptcallback == nil or self.acceptcallback(self, connection) == true then
 			insert(self.connections, connection)
