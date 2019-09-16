@@ -24,7 +24,6 @@ function frame.EncodeHeader(length, opcode, mask, fin)
 		op = bor(op, 0x80)
 	end
 
-	local length = #data
 	if length <= 0x7D then
 		if mask == nil then
 			return char(op, length)
