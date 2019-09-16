@@ -42,7 +42,7 @@ function utilities.HTTPHeaders(request)
 
 	local httpOperation,url,httpVersion = find(request[1], "^[ ]*([A-Za-z]+)[ ]+(%S-)%s+(HTTP/[%d%.]+)[\r\n ]")
 
-	assert(httpVersion == "1.1","Unsupported HTTP Version: only 1.1 is supported.")
+	assert(httpVersion == "1.1", "Unsupported HTTP Version: only 1.1 is supported.")
 
 	local headers = {}
 	for i = 2, #request do
