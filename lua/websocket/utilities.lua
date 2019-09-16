@@ -50,9 +50,6 @@ function utilities.HTTPHeaders(request)
 		local name, val = match(line, "([^%s]+)%s*:%s*([^\r\n]+)")
 		if name ~= nil and val ~= nil then
 			name = lower(name)
-			if not find(name, "sec%-websocket") then
-				val = lower(val)
-			end
 
 			if headers[name] == nil then
 				headers[name] = val
