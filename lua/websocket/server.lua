@@ -202,7 +202,7 @@ function websocket.CreateServer(addr, port, queue) -- non-blocking and max queue
 		connections = {}
 	}, SERVER)
 	server.socket:settimeout(0)
-	server.socket:bind(addr, port)
+	assert(server.socket:bind(addr, port) == 1,"failed to bind address/port")
 	server.socket:listen(queue or 5)
 
 	hook_Add("Think", server, SERVER.Think)
