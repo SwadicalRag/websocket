@@ -96,9 +96,9 @@ function CLIENT:Think()
 	end
 
 	if page ~= nil then
-		local headers = HTTPHeaders(page)
-		if headers ~= nil then
-			self:Handshake(headers["connection"], headers["sec-websocket-key"])
+		local data = HTTPHeaders(page)
+		if data ~= nil then
+			self:Handshake(data.headers["connection"], data.headers["sec-websocket-key"])
 		end
 	end
 

@@ -78,10 +78,10 @@ function CONNECTION:Think()
 	end
 
 	if self.state == CONNECTING then
-		local headers = {}
+		local httpData = {}
 		local data, err = self:Receive()
 		while data ~= nil and err == nil do
-			insert(headers, data)
+			insert(httpData, data)
 
 			if #data == 0 then
 				break
@@ -91,16 +91,22 @@ function CONNECTION:Think()
 		end
 
 		if err == nil then
-			headers = HTTPHeaders(headers)
-			if headers ~= nil then
-				local key = format(
-					"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: %s\r\nSec-WebSocket-Accept: %s\r\n\r\n",
-					headers["connection"],
-					Base64Encode(SHA1(
-						headers["sec-websocket-key"] .. "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-					))
-				)
-				self.state = self.socket:send(key) == #key and OPEN or CLOSED
+			httpData = HTTPHeaders(httpData)
+			if httpData ~= nil then
+				local wsKey = httpData.headers["sec-websocket-key"]
+
+				if wsKey then
+					local key = format(
+						"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: %s\r\nSec-WebSocket-Accept: %s\r\n\r\n",
+						httpData.headers["connection"],
+						Base64Encode(SHA1(
+							httpData.headers["sec-websocket-key"] .. "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+						))
+					)
+					self.state = self.socket:send(key) == #key and OPEN or CLOSED
+				else
+					self:Shutdown()
+				end
 			end
 		else
 			print("websocket auth error: " .. err)
