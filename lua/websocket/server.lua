@@ -11,7 +11,7 @@ local hook_Add, hook_Remove = hook.Add, hook.Remove
 
 local Base64Encode, SHA1 = utilities.Base64Encode, utilities.SHA1
 local HTTPHeaders, XORMask = utilities.HTTPHeaders, utilities.XORMask
-local Encode, DecodeHeader = frame.Encode, frame.DecodeHeader
+local Encode, DecodeHeader, EncodeClose, DecodeClose = frame.Encode, frame.DecodeHeader, frame.EncodeClose, frame.DecodeClose
 
 local state = websocket.state
 local CONNECTING, OPEN, CLOSED = state.CONNECTING, state.OPEN, state.CLOSED
@@ -49,13 +49,22 @@ function CONNECTION:GetState()
 	return self.state
 end
 
-function CONNECTION:Send(data, opcode, masked, fin)
+function CONNECTION:Send(data, opcode)
 	if not self:IsValid() then
 		return false
 	end
 
-	local data = Encode(data, opcode, masked, fin)
+	local data = Encode(data, opcode, false, true)
 	return self.socket:send(data) == #data
+end
+
+function CONNECTION:SendEx(data, opcode)
+	if not self:IsValid() then
+		return false
+	end
+
+	local data = Encode(data, opcode, false, true)
+	self.sendBuffer[#self.sendBuffer + 1] = data
 end
 
 function CONNECTION:Receive(pattern)
@@ -86,7 +95,9 @@ function CONNECTION:ReceiveEx(len)
 			return err
 		end
 
-		coroutine.yield()
+		if len > 0 then
+			coroutine.yield(false,"read block")
+		end
 	end
 
 	return nil,out
@@ -94,15 +105,17 @@ end
 
 function CONNECTION:ReadFrame()
 	-- Based off https://github.com/lipp/lua-websockets/blob/master/src/websocket/sync.lua#L8
+	if self.is_closing then return false,"closing" end
+
 	local first_opcode
 	local frames
-	local bytes = 3
+	local bytes = 2
 	local encoded = ''
 
 	local clean = function(was_clean,code,reason)
 		self.state = state.CLOSED
 		self:Shutdown()
-		return nil,nil,was_clean,code,reason or "closed"
+		return false,reason or "closed",was_clean,code
 	end
 
 	while true do
@@ -111,17 +124,48 @@ function CONNECTION:ReadFrame()
 			return clean(false,1006,err)
 		end
 		encoded = encoded..chunk
-		local decoded,length,opcode,masked,fin,mask = DecodeHeader(encoded)
+		local decoded,length,opcode,masked,fin,mask,headerLen = DecodeHeader(encoded)
 		if decoded then
-			err,decoded = self:ReceiveEx(length)
+			err,decoded = self:ReceiveEx(length - (#encoded - headerLen))
+
+			if #encoded > headerLen then decoded = encoded:sub(headerLen + 1, -1)..decoded end
 			if masked then
 				decoded = XORMask(decoded,mask)
 			end
 
 			assert(not err,"ReadFrame() -> ReceiveEx() error")
 			if opcode == frame.CLOSE then
-				error("TODO: websocket close opcode")
+				if not self.is_closing then
+					self.is_closing = true
+					
+					local code,reason = DecodeClose(decoded)
+					local closeFrame = EncodeClose(code,reason)
+					local fullCloseFrame = Encode(closeFrame, frame.CLOSE, false, true)
+
+					local sentLen,err = self.socket:send(fullCloseFrame)
+
+					if err or (sentLen ~= #fullCloseFrame) then
+						return clean(false,code,err)
+					else
+						return clean(true,code,reason)
+					end
+				else
+					return decoded,opcode,masked,fin
+				end
+			elseif opcode == frame.PING then
+				local pongFrame = Encode(decoded, frame.PONG, false, true)
+
+				local sentLen,err = self.socket:send(pongFrame)
+
+				if err or (sentLen ~= #pongFrame) then
+					return clean(false,code,err)
+				end
+
+				return decoded,opcode,masked,fin
+			elseif opcode == frame.PONG then
+				return decoded,opcode,masked,fin
 			end
+
 			if not first_opcode then
 				first_opcode = opcode
 			end
@@ -135,10 +179,10 @@ function CONNECTION:ReadFrame()
 				encoded = ""
 				insert(frames,decoded)
 			elseif not frames then
-				return decoded,first_opcode
+				return decoded,first_opcode,masked,fin
 			else
 				insert(frames,decoded)
-				return concat(frames),first_opcode
+				return concat(frames),first_opcode,masked,fin
 			end
 		else
 			assert(type(length) == "number" and length > 0)
@@ -165,7 +209,7 @@ function CONNECTION:ThinkFactory()
 			data, err = self:Receive()
 		end
 
-		if err == nil then
+		if err == nil then print(table.concat(httpData,"\n"))
 			httpData = HTTPHeaders(httpData)
 			if httpData ~= nil then
 				local wsKey = httpData.headers["sec-websocket-key"]
@@ -193,10 +237,16 @@ function CONNECTION:ThinkFactory()
 		else
 			print("websocket auth error: " .. err)
 		end
+
+		return true
 	elseif self.state == OPEN then
-		local decoded,firstOpcode = self:ReadFrame()
-		if decoded and self.recvcallback then
-			self.recvcallback(self, decoded)
+		local data,opcode,masked,fin = self:ReadFrame()
+		if data then
+			if self.recvcallback then
+				self.recvcallback(self, data,opcode,masked,fin)
+			end
+
+			return true
 		end
 	end
 end
@@ -233,21 +283,45 @@ function SERVER:Think()
 		return
 	end
 
+	for i,connection in ipairs(self.connections) do
+		while #connection.sendBuffer > 0 do
+			local toSend = connection.sendBuffer[1]
+			local sentLen,err = connection.socket:send(toSend)
+
+			if err then
+				print("UH OH",err)
+			elseif #toSend == sentLen then
+				table.remove(connection.sendBuffer,1)
+			else
+				connection.sendBuffer[1] = toSend:sub(sentLen + 1,-1)
+			end
+		end
+	end
+
 	local client = self.socket:accept()
 	while client ~= nil do
 		client:settimeout(0)
 		local connection = setmetatable({
 			socket = client,
 			server = self,
-			state = CONNECTING
+			state = CONNECTING,
+			sendBuffer = {},
 		}, CONNECTION)
 
 		connection.Think = coroutine.wrap(function(...)
 			while true do
-				local suc,err = xpcall(connection.ThinkFactory,debug.traceback,...)
+				::tryAgain::
+				local suc,ret,reason = xpcall(connection.ThinkFactory,debug.traceback,...)
 
 				if not suc then
-					ErrorNoHalt(err.."\n")
+					ErrorNoHalt(ret.."\n")
+				elseif ret then
+					-- we were able to read a packet!
+					-- try read another if we can!
+					goto tryAgain
+				elseif connection.socket and connection.socket:dirty() then
+					-- theres still more data!
+					goto tryAgain
 				end
 
 				coroutine.yield()
