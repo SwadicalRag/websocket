@@ -191,7 +191,7 @@ function CONNECTION:ReadFrame()
 		end
 
 		encodedMsg = encodedMsg..chunk
-		
+
 		local decoded,length,opcode,masked,fin,mask,headerLen = DecodeHeader(encodedMsg)
 		if decoded then
 			err,decoded = self:ReceiveEx(length - (#encodedMsg - headerLen))
@@ -413,7 +413,7 @@ function SERVER:Think()
 
 	for i = 1, self.numconnections do
 		self.connections[i]:Think()
-		if self.connections[i]:GetState() == CLOSED then
+		if (self.connections[i]:GetState() == CLOSED) or not IsValid(self.connections[i].socket) then
 			remove(self.connections, i)
 			self.numconnections = self.numconnections - 1
 			i = i - 1
