@@ -93,6 +93,10 @@ function CONNECTION:ReceiveEx(len)
 			len = len - #buf
 		elseif err ~= "timeout" then
 			return err
+		elseif (type(buf) == "string") and #buf > 0 then
+			-- timeout but we were able to read some stuff
+			out = out..buf
+			len = len - #buf
 		end
 
 		if len > 0 then
