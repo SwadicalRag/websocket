@@ -213,7 +213,7 @@ function CONNECTION:ThinkFactory()
 			data, err = self:Receive()
 		end
 
-		if err == nil then print(table.concat(httpData,"\n"))
+		if err == nil then
 			httpData = HTTPHeaders(httpData)
 			if httpData ~= nil then
 				local wsKey = httpData.headers["sec-websocket-key"]
@@ -293,7 +293,7 @@ function SERVER:Think()
 			local sentLen,err = connection.socket:send(toSend)
 
 			if err then
-				print("UH OH",err)
+				print("websocket send error",err)
 			elseif #toSend == sentLen then
 				table.remove(connection.sendBuffer,1)
 			else
