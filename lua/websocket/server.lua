@@ -413,7 +413,7 @@ function SERVER:Think()
 
 	for i = 1, self.numconnections do
 		self.connections[i]:Think()
-		if (self.connections[i]:GetState() == CLOSED) or not IsValid(self.connections[i].socket) then
+		if (self.connections[i]:GetState() == CLOSED) or (self.connections[i].socket == nil) then
 			remove(self.connections, i)
 			self.numconnections = self.numconnections - 1
 			i = i - 1
