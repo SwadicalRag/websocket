@@ -23,9 +23,40 @@ function CONNECTION:SetReceiveCallback(func)
 	self.recvcallback = func
 end
 
-function CONNECTION:Shutdown()
+function CONNECTION:SetCloseCallback(func)
+	self.closecallback = func
+end
+
+function CONNECTION:Shutdown(code,reason)
+	if self.is_closing then return end
+
+	code = code or 1000
+
+	self:ShutdownInternal(code,reason)
+	
+	local closeFrame = EncodeClose(code,reason)
+	local fullCloseFrame = Encode(closeFrame, frame.CLOSE, false, true)
+
+	local sentLen,err = self.socket:send(fullCloseFrame)
+
+	if err then
+		return false,err
+	elseif (sentLen ~= #fullCloseFrame) then
+		return false,"incomplete send"
+	else
+		return true
+	end
+end
+
+function CONNECTION:ShutdownInternal(code,reason)
 	if not self:IsValid() then
 		return
+	end
+
+	self.is_closing = true
+
+	if self.closecallback then
+		self.closecallback(self,code,reason)
 	end
 
 	self.socket:shutdown("both")
@@ -118,7 +149,7 @@ function CONNECTION:ReadFrame()
 
 	local clean = function(was_clean,code,reason)
 		self.state = state.CLOSED
-		self:Shutdown()
+		self:ShutdownInternal(code,reason)
 		return false,reason or "closed",was_clean,code
 	end
 
@@ -213,7 +244,7 @@ function CONNECTION:ThinkFactory()
 			data, err = self:Receive()
 		end
 
-		if err == nil then
+		if err == nil then print(httpData[1])
 			httpData = HTTPHeaders(httpData)
 			if httpData ~= nil then
 				local wsKey = httpData.headers["sec-websocket-key"]
@@ -235,7 +266,10 @@ function CONNECTION:ThinkFactory()
 						"HTTP/1.1 200 OK\r\nConnection: %s\r\n\r\nHello, you have reached gm_websocket :)\r\n\r\n",
 						httpData.headers["connection"]
 					))
-					self:Shutdown()
+
+					self.socket:shutdown("both")
+					self.socket:close()
+					self.socket = nil
 				end
 			end
 		else
@@ -262,13 +296,13 @@ function SERVER:SetAcceptCallback(func)
 	self.acceptcallback = func
 end
 
-function SERVER:Shutdown()
+function SERVER:Shutdown(code,reason)
 	if not self:IsValid() then
 		return
 	end
 
 	for i = 1, self.numconnections do
-		self.connections[i]:Shutdown()
+		self.connections[i]:ShutdownInternal(code,reason)
 	end
 
 	self.socket:shutdown("both")
