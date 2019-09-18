@@ -27,6 +27,10 @@ function CONNECTION:SetCloseCallback(func)
 	self.closecallback = func
 end
 
+function CONNECTION:SetErrorCallback(func)
+	self.errorcallback = func
+end
+
 function CONNECTION:Shutdown(code,reason)
 	if self.is_closing then return end
 
@@ -139,31 +143,60 @@ function CONNECTION:ReceiveEx(len)
 end
 
 function CONNECTION:ReadFrame()
-	-- Based off https://github.com/lipp/lua-websockets/blob/master/src/websocket/sync.lua#L8
+	-- https://github.com/lipp/lua-websockets/blob/cafb5874473ab9f54e734c123b18fb059801e4d5/src/websocket/sync.lua#L8-L75
+	--[[
+		Copyright (c) 2012 by Gerhard Lipp <gelipp@gmail.com>
+
+		Permission is hereby granted, free of charge, to any person obtaining a copy
+		of this software and associated documentation files (the "Software"), to deal
+		in the Software without restriction, including without limitation the rights
+		to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+		copies of the Software, and to permit persons to whom the Software is
+		furnished to do so, subject to the following conditions:
+
+		The above copyright notice and this permission notice shall be included in
+		all copies or substantial portions of the Software.
+
+		THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+		IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+		FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+		AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+		LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+		OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+		THE SOFTWARE.
+	]]
+
 	if self.is_closing then return false,"closing" end
 
-	local first_opcode
-	local frames
-	local bytes = 2
-	local encoded = ''
+	local startOpcode
+	local readFrames
+	local bytesToRead = 2
+	local encodedMsg = ""
 
-	local clean = function(was_clean,code,reason)
+	local clean = function(wasCleanExit,code,reason)
 		self.state = state.CLOSED
 		self:ShutdownInternal(code,reason)
-		return false,reason or "closed",was_clean,code
+		if not wasCleanExit then
+			if self.errorcallback then
+				self.errorcallback(self,"websocket close error: " .. tostring(reason))
+			end
+		end
+		return false,reason or "closed",wasCleanExit,code
 	end
 
 	while true do
-		local err,chunk = self:ReceiveEx(bytes - #encoded)
+		local err,chunk = self:ReceiveEx(bytesToRead - #encodedMsg)
 		if err then
 			return clean(false,1006,err)
 		end
-		encoded = encoded..chunk
-		local decoded,length,opcode,masked,fin,mask,headerLen = DecodeHeader(encoded)
-		if decoded then
-			err,decoded = self:ReceiveEx(length - (#encoded - headerLen))
 
-			if #encoded > headerLen then decoded = encoded:sub(headerLen + 1, -1)..decoded end
+		encodedMsg = encodedMsg..chunk
+		
+		local decoded,length,opcode,masked,fin,mask,headerLen = DecodeHeader(encodedMsg)
+		if decoded then
+			err,decoded = self:ReceiveEx(length - (#encodedMsg - headerLen))
+
+			if #encodedMsg > headerLen then decoded = encodedMsg:sub(headerLen + 1, -1)..decoded end
 			if masked then
 				decoded = XORMask(decoded,mask)
 			end
@@ -201,27 +234,27 @@ function CONNECTION:ReadFrame()
 				return decoded,opcode,masked,fin
 			end
 
-			if not first_opcode then
-				first_opcode = opcode
+			if not startOpcode then
+				startOpcode = opcode
 			end
 			if not fin then
-				if not frames then
-					frames = {}
+				if not readFrames then
+					readFrames = {}
 				elseif opcode ~= frame.CONTINUATION then
 					return clean(false,1002,"protocol error")
 				end
-				bytes = 3
-				encoded = ""
-				insert(frames,decoded)
-			elseif not frames then
-				return decoded,first_opcode,masked,fin
+				bytesToRead = 3
+				encodedMsg = ""
+				insert(readFrames,decoded)
+			elseif not readFrames then
+				return decoded,startOpcode,masked,fin
 			else
-				insert(frames,decoded)
-				return concat(frames),first_opcode,masked,fin
+				insert(readFrames,decoded)
+				return concat(readFrames),startOpcode,masked,fin
 			end
 		else
 			assert(type(length) == "number" and length > 0)
-			bytes = length
+			bytesToRead = length
 		end
 	end
 end
@@ -244,7 +277,7 @@ function CONNECTION:ThinkFactory()
 			data, err = self:Receive()
 		end
 
-		if err == nil then print(httpData[1])
+		if err == nil then
 			httpData = HTTPHeaders(httpData)
 			if httpData ~= nil then
 				local wsKey = httpData.headers["sec-websocket-key"]
@@ -273,7 +306,9 @@ function CONNECTION:ThinkFactory()
 				end
 			end
 		else
-			print("websocket auth error: " .. err)
+			if self.errorcallback then
+				self.errorcallback(self,"websocket auth error: " .. err)
+			end
 		end
 
 		return true
@@ -327,7 +362,9 @@ function SERVER:Think()
 			local sentLen,err = connection.socket:send(toSend)
 
 			if err then
-				print("websocket send error",err)
+				if connection.errorcallback then
+					connection.errorcallback(connection,"websocket auth error: " .. err)
+				end
 			elseif #toSend == sentLen then
 				table.remove(connection.sendBuffer,1)
 			else
