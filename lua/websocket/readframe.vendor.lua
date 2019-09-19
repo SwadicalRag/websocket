@@ -38,7 +38,9 @@ local function ReadFrame(self)
     -- and to work with a coroutine-based receive function
     -- and also modified the return values to make actual sense.
 
-	if self.is_closing then return false,"closing" end
+    if self.is_closing then return false,"closing" end
+    
+    local messages = {}
 
 	local startOpcode
 	local readFrames
@@ -89,8 +91,8 @@ local function ReadFrame(self)
 					else
 						return clean(true,code,reason)
 					end
-				else
-					return decoded,opcode,masked,fin
+                else
+					return false,"closed"
 				end
 			elseif opcode == frame.PING then
 				local pongFrame = Encode(decoded, frame.PONG, false, true)
@@ -101,9 +103,19 @@ local function ReadFrame(self)
 					return clean(false,code,err)
 				end
 
-				return decoded,opcode,masked,fin
+                messages[#messages + 1] = {
+                    decoded = decoded,
+                    opcode = opcode,
+                    masked = masked,
+                    fin = fin,
+                }
 			elseif opcode == frame.PONG then
-				return decoded,opcode,masked,fin
+                messages[#messages + 1] = {
+                    decoded = decoded,
+                    opcode = opcode,
+                    masked = masked,
+                    fin = fin,
+                }
 			end
 
 			if not startOpcode then
@@ -119,10 +131,22 @@ local function ReadFrame(self)
 				encodedMsg = ""
 				insert(readFrames,decoded)
 			elseif not readFrames then
-				return decoded,startOpcode,masked,fin
+                messages[#messages + 1] = {
+                    decoded = decoded,
+                    opcode = startOpcode,
+                    masked = masked,
+                    fin = fin,
+                }
+				return true,messages
 			else
 				insert(readFrames,decoded)
-				return concat(readFrames),startOpcode,masked,fin
+                messages[#messages + 1] = {
+                    decoded = concat(readFrames),
+                    opcode = startOpcode,
+                    masked = masked,
+                    fin = fin,
+                }
+				return true,messages
 			end
 		else
 			assert(type(length) == "number" and length > 0)

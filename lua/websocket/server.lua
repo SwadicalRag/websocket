@@ -151,7 +151,7 @@ CONNECTION.ReadFrame = include("readframe.vendor.lua")
 
 function CONNECTION:ThinkFactory()
 	if not self:IsValid() then
-		return
+		return false,"closed"
 	end
 
 	if self.state == CONNECTING then
@@ -203,13 +203,18 @@ function CONNECTION:ThinkFactory()
 
 		return true
 	elseif self.state == OPEN then
-		local data,opcode,masked,fin = self:ReadFrame()
-		if data then
+		local suc,messages = self:ReadFrame()
+		if suc then
 			if self.recvcallback then
-				self.recvcallback(self, data,opcode,masked,fin)
+				for i,msg in ipairs(messages) do
+					self.recvcallback(self,msg.data,msg.opcode,msg.masked,msg.fin)
+				end
 			end
 
 			return true
+		else
+			-- `messages` is error string on failure cases
+			return false,messages
 		end
 	end
 end
