@@ -210,7 +210,7 @@ function CONNECTION:ThinkFactory()
 		if suc then
 			if self.recvcallback then
 				for i,msg in ipairs(messages) do
-					self.recvcallback(self,msg.data,msg.opcode,msg.masked,msg.fin)
+					self.recvcallback(self,msg.decoded,msg.opcode,msg.masked,msg.fin)
 				end
 			end
 
