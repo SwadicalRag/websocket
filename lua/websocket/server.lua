@@ -59,6 +59,8 @@ function CONNECTION:ShutdownInternal(code,reason)
 		return
 	end
 
+	if self.is_closing then return end
+
 	self.is_closing = true
 
 	if self.closecallback then
@@ -70,6 +72,7 @@ function CONNECTION:ShutdownInternal(code,reason)
 	self.socket:shutdown("both")
 	self.socket:close()
 	self.socket = nil
+	self.state = CLOSED
 end
 
 function CONNECTION:IsValid()
