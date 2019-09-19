@@ -1,25 +1,25 @@
 
 -- https://github.com/lipp/lua-websockets/blob/cafb5874473ab9f54e734c123b18fb059801e4d5/src/websocket/sync.lua#L8-L75
 --[[
-    Copyright (c) 2012 by Gerhard Lipp <gelipp@gmail.com>
+	Copyright (c) 2012 by Gerhard Lipp <gelipp@gmail.com>
 
-    Permission is hereby granted, free of charge, to any person obtaining a copy
-    of this software and associated documentation files (the "Software"), to deal
-    in the Software without restriction, including without limitation the rights
-    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-    copies of the Software, and to permit persons to whom the Software is
-    furnished to do so, subject to the following conditions:
+	Permission is hereby granted, free of charge, to any person obtaining a copy
+	of this software and associated documentation files (the "Software"), to deal
+	in the Software without restriction, including without limitation the rights
+	to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+	copies of the Software, and to permit persons to whom the Software is
+	furnished to do so, subject to the following conditions:
 
-    The above copyright notice and this permission notice shall be included in
-    all copies or substantial portions of the Software.
+	The above copyright notice and this permission notice shall be included in
+	all copies or substantial portions of the Software.
 
-    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-    THE SOFTWARE.
+	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+	AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+	THE SOFTWARE.
 ]]
 
 local insert, remove, concat = table.insert, table.remove, table.concat
@@ -34,13 +34,13 @@ local Encode, DecodeHeader, EncodeClose, DecodeClose = frame.Encode, frame.Decod
 local state = websocket.state
 
 local function ReadFrame(self)
-    -- modified with error callbacks
-    -- and to work with a coroutine-based receive function
-    -- and also modified the return values to make actual sense.
+	-- modified with error callbacks
+	-- and to work with a coroutine-based receive function
+	-- and also modified the return values to make actual sense.
 
-    if self.is_closing then return false,"closing" end
-    
-    local messages = {}
+	if self.is_closing then return false,"closing" end
+	
+	local messages = {}
 
 	local startOpcode
 	local readFrames
@@ -91,7 +91,7 @@ local function ReadFrame(self)
 					else
 						return clean(true,code,reason)
 					end
-                else
+				else
 					return false,"closed"
 				end
 			elseif opcode == frame.PING then
@@ -103,19 +103,19 @@ local function ReadFrame(self)
 					return clean(false,code,err)
 				end
 
-                messages[#messages + 1] = {
-                    decoded = decoded,
-                    opcode = opcode,
-                    masked = masked,
-                    fin = fin,
-                }
+				messages[#messages + 1] = {
+					decoded = decoded,
+					opcode = opcode,
+					masked = masked,
+					fin = fin,
+				}
 			elseif opcode == frame.PONG then
-                messages[#messages + 1] = {
-                    decoded = decoded,
-                    opcode = opcode,
-                    masked = masked,
-                    fin = fin,
-                }
+				messages[#messages + 1] = {
+					decoded = decoded,
+					opcode = opcode,
+					masked = masked,
+					fin = fin,
+				}
 			end
 
 			if not startOpcode then
@@ -131,21 +131,21 @@ local function ReadFrame(self)
 				encodedMsg = ""
 				insert(readFrames,decoded)
 			elseif not readFrames then
-                messages[#messages + 1] = {
-                    decoded = decoded,
-                    opcode = startOpcode,
-                    masked = masked,
-                    fin = fin,
-                }
+				messages[#messages + 1] = {
+					decoded = decoded,
+					opcode = startOpcode,
+					masked = masked,
+					fin = fin,
+				}
 				return true,messages
 			else
 				insert(readFrames,decoded)
-                messages[#messages + 1] = {
-                    decoded = concat(readFrames),
-                    opcode = startOpcode,
-                    masked = masked,
-                    fin = fin,
-                }
+				messages[#messages + 1] = {
+					decoded = concat(readFrames),
+					opcode = startOpcode,
+					masked = masked,
+					fin = fin,
+				}
 				return true,messages
 			end
 		else
