@@ -131,8 +131,10 @@ function CONNECTION:ReceiveEx(len)
 		buf,err = self:Receive(len)
 
 		if not err then
-			out = out..buf
-			len = len - #buf
+			if type(buf) == "string" then
+				out = out..buf
+				len = len - #buf
+			end
 		elseif err ~= "timeout" then
 			return err
 		elseif (type(buf) == "string") and #buf > 0 then
