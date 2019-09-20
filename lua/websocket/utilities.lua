@@ -37,11 +37,9 @@ function utilities.XORMask(data, mask)
 end
 
 function utilities.HTTPHeaders(request)
-	assert(type(request) == "table", "parameter #1 is not a table")
-	assert(request[1] ~= nil and find(request[1], ".*HTTP/1%.1") ~= nil, "parameter #1 (table) doesn't contain data or doesn't contain a HTTP request on key 1")
+	assert(type(request) == "table" and #request ~= 0, "parameter #1 is not a table or is empty")
 
-	local httpOperation,url,httpVersion = match(request[1], "^[ ]*([A-Za-z]+)[ ]+(%S-)%s+HTTP/([%d%.]+)[\r\n ]*")
-
+	local httpOperation, url, httpVersion = match(request[1], "^[ ]*([A-Za-z]+)[ ]+(%S-)%s+HTTP/([%d%.]+)[\r\n ]*")
 	assert(httpVersion == "1.1", "Unsupported HTTP Version: only 1.1 is supported.")
 
 	local headers = {}
@@ -66,6 +64,6 @@ function utilities.HTTPHeaders(request)
 	return {
 		httpOperation = httpOperation,
 		url = url,
-		headers = headers,
+		headers = headers
 	}
 end

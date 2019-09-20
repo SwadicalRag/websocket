@@ -99,7 +99,10 @@ function CLIENT:Think()
 		local data = HTTPHeaders(page)
 		if data ~= nil then
 			local secKey = data.headers["sec-websocket-key"]
-			if secKey then secKey = lower(secKey) end
+			if secKey ~= nil then
+				secKey = lower(secKey)
+			end
+
 			self:Handshake(data.headers["connection"], secKey)
 		end
 	end

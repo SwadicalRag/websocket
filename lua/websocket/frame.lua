@@ -153,7 +153,7 @@ function frame.Encode(data, opcode, masked, fin)
 end
 
 function frame.Decode(data)
-	local complete, length, opcode, masked, fin, mask = frame.DecodeHeader(data)
+	local complete, _, opcode, masked, fin, mask = frame.DecodeHeader(data)
 	assert(complete, "received an incomplete websocket frame to decode")
 
 	if masked then
@@ -165,12 +165,12 @@ end
 
 function frame.EncodeClose(code, reason)
 	local out = char(
-		band(rshift(code,8),0xFF),
-		band(code,0xFF)
+		band(rshift(code, 8), 0xFF),
+		band(code, 0xFF)
 	)
 
 	if reason then
-		out = out..tostring(reason)
+		out = out .. tostring(reason)
 	end
 
 	return out
@@ -182,5 +182,5 @@ function frame.DecodeClose(data)
 	local byte1 = byte(data, 1)
 	local byte2 = byte(data, 2)
 
-	return lshift(byte1,8) + byte2, #data > 2 and header:sub(3,-1) or false
+	return lshift(byte1, 8) + byte2, #data > 2 and header:sub(3, -1) or false
 end

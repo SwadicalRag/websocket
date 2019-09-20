@@ -6,7 +6,7 @@ local socket = require("socket") or socket
 
 local insert, remove, concat = table.insert, table.remove, table.concat
 local format = string.format
-local setmetatable, assert, print = setmetatable, assert, print
+local setmetatable, assert = setmetatable, assert
 local hook_Add, hook_Remove = hook.Add, hook.Remove
 
 local Base64Encode, SHA1 = utilities.Base64Encode, utilities.SHA1
@@ -31,48 +31,48 @@ function CONNECTION:SetErrorCallback(func)
 	self.errorcallback = func
 end
 
-function CONNECTION:Shutdown(code,reason)
-	if self.is_closing then return end
+function CONNECTION:Shutdown(code, reason)
+	if self.is_closing then
+		return true
+	end
 
 	code = code or 1000
+	self:ShutdownInternal(code, reason)
 
-	self:ShutdownInternal(code,reason)
+	if self.socket == nil then
+		return true
+	end
 
-	if not self.socket then return end
-	
-	local closeFrame = EncodeClose(code,reason)
+	local closeFrame = EncodeClose(code, reason)
 	local fullCloseFrame = Encode(closeFrame, frame.CLOSE, false, true)
-
-	local sentLen,err = self.socket:send(fullCloseFrame)
-
-	if err then
-		return false,err
-	elseif (sentLen ~= #fullCloseFrame) then
-		return false,"incomplete send"
+	local sentLen, err = self.socket:send(fullCloseFrame)
+	if sentLen == nil then
+		return false, err
+	elseif sentLen ~= #fullCloseFrame then
+		return false, "incomplete send"
 	else
 		return true
 	end
 end
 
-function CONNECTION:ShutdownInternal(code,reason)
-	if not self:IsValid() then
+function CONNECTION:ShutdownInternal(code, reason)
+	if not self:IsValid() or self.is_closing then
 		return
 	end
-
-	if self.is_closing then return end
 
 	self.is_closing = true
 
 	if self.closecallback then
-		self.closecallback(self,code,reason)
+		self.closecallback(self, code, reason)
 	end
 
-	if not self.socket then return end
-
-	self.socket:shutdown("both")
-	self.socket:close()
-	self.socket = nil
 	self.state = CLOSED
+
+	if self.socket ~= nil then
+		self.socket:shutdown("both")
+		self.socket:close()
+		self.socket = nil
+	end
 end
 
 function CONNECTION:IsValid()
@@ -96,8 +96,8 @@ function CONNECTION:Send(data, opcode)
 		return false
 	end
 
-	local data = Encode(data, opcode, false, true)
-	return self.socket:send(data) == #data
+	local encodedData = Encode(data, opcode, false, true)
+	return self.socket:send(encodedData) == #encodedData
 end
 
 function CONNECTION:SendEx(data, opcode)
@@ -105,13 +105,14 @@ function CONNECTION:SendEx(data, opcode)
 		return false
 	end
 
-	local data = Encode(data, opcode, false, true)
-	self.sendBuffer[#self.sendBuffer + 1] = data
+	local encodedData = Encode(data, opcode, false, true)
+	self.sendBuffer[#self.sendBuffer + 1] = encodedData
+	return true
 end
 
 function CONNECTION:Receive(pattern)
 	if not self:IsValid() then
-		return false
+		return nil, "invalid"
 	end
 
 	local data, err, part = self.socket:receive(pattern)
@@ -120,43 +121,31 @@ function CONNECTION:Receive(pattern)
 		self.state = CLOSED
 	end
 
-	return err and part or data, err
+	return err ~= nil and part or data, err
 end
 
 function CONNECTION:ReceiveEx(len)
 	local out = ""
-	local err,buf
-
 	while len > 0 do
-		buf,err = self:Receive(len)
-
-		if not err then
-			if type(buf) == "string" then
-				out = out..buf
-				len = len - #buf
-			end
-		elseif err ~= "timeout" then
-			return err
-		elseif (type(buf) == "string") and #buf > 0 then
-			-- timeout but we were able to read some stuff
-			out = out..buf
+		local buf, err = self:Receive(len)
+		if buf ~= nil then
+			out = out .. buf
 			len = len - #buf
+		elseif err ~= "timeout" then
+			return nil, err
 		end
 
 		if len > 0 then
-			coroutine.yield(false,"read block")
+			coroutine.yield(false, "read block")
 		end
 	end
 
-	return nil,out
+	return out
 end
-
--- Include should return properly in an up-to-date gmod
-CONNECTION.ReadFrame = include("readframe.vendor.lua")
 
 function CONNECTION:ThinkFactory()
 	if not self:IsValid() then
-		return false,"closed"
+		return false, "closed"
 	end
 
 	if self.state == CONNECTING then
@@ -176,8 +165,7 @@ function CONNECTION:ThinkFactory()
 			httpData = HTTPHeaders(httpData)
 			if httpData ~= nil then
 				local wsKey = httpData.headers["sec-websocket-key"]
-
-				if wsKey then
+				if wsKey ~= nil then
 					local key = format(
 						"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: %s\r\nSec-WebSocket-Accept: %s\r\n\r\n",
 						httpData.headers["connection"],
@@ -202,24 +190,25 @@ function CONNECTION:ThinkFactory()
 			end
 		else
 			if self.errorcallback then
-				self.errorcallback(self,"websocket auth error: " .. err)
+				self.errorcallback(self, "websocket auth error: " .. err)
 			end
 		end
 
 		return true
 	elseif self.state == OPEN then
-		local suc,messages = self:ReadFrame()
+		local suc, messages = self:ReadFrame()
 		if suc then
 			if self.recvcallback then
-				for i,msg in ipairs(messages) do
-					self.recvcallback(self,msg.decoded,msg.opcode,msg.masked,msg.fin)
+				for i = 1, #messages do
+					local msg = messages[i]
+					self.recvcallback(self, msg.decoded, msg.opcode, msg.masked, msg.fin)
 				end
 			end
 
 			return true
 		else
 			-- `messages` is error string on failure cases
-			return false,messages
+			return false, messages
 		end
 	end
 end
@@ -256,19 +245,20 @@ function SERVER:Think()
 		return
 	end
 
-	for i,connection in ipairs(self.connections) do
+	for i = 1, self.numconnections do
+		local connection = self.connections[i]
 		while #connection.sendBuffer > 0 do
 			local toSend = connection.sendBuffer[1]
-			local sentLen,err = connection.socket:send(toSend)
+			local sentLen, err = connection.socket:send(toSend)
 
 			if err then
 				if connection.errorcallback then
-					connection.errorcallback(connection,"websocket auth error: " .. err)
+					connection.errorcallback(connection, "websocket auth error: " .. err)
 				end
 			elseif #toSend == sentLen then
-				table.remove(connection.sendBuffer,1)
+				table.remove(connection.sendBuffer, 1)
 			else
-				connection.sendBuffer[1] = toSend:sub(sentLen + 1,-1)
+				connection.sendBuffer[1] = toSend:sub(sentLen + 1, -1)
 			end
 		end
 	end
@@ -280,26 +270,18 @@ function SERVER:Think()
 			socket = client,
 			server = self,
 			state = CONNECTING,
-			sendBuffer = {},
+			sendBuffer = {}
 		}, CONNECTION)
 
 		connection.Think = coroutine.wrap(function(...)
 			while true do
-				::tryAgain::
-				local suc,ret,reason = xpcall(connection.ThinkFactory,debug.traceback,...)
-
+				local suc, ret, _ = xpcall(connection.ThinkFactory, debug.traceback, ...)
 				if not suc then
-					ErrorNoHalt(ret.."\n")
-				elseif ret then
-					-- we were able to read a packet!
-					-- try read another if we can!
-					goto tryAgain
-				elseif connection.socket and connection.socket:dirty() then
-					-- theres still more data!
-					goto tryAgain
+					ErrorNoHalt(ret .. "\n")
+				elseif not ret or not connection.socket or not connection.socket:dirty() then
+					-- we were not able to read anymore! yield!
+					coroutine.yield()
 				end
-
-				coroutine.yield()
 			end
 		end)
 
@@ -312,13 +294,161 @@ function SERVER:Think()
 	end
 
 	for i = 1, self.numconnections do
-		self.connections[i]:Think()
-		if (self.connections[i]:GetState() == CLOSED) or (self.connections[i].socket == nil) then
+		local connection = self.connections[i]
+		connection:Think()
+		if connection:GetState() == CLOSED or connection.socket == nil then
 			remove(self.connections, i)
 			self.numconnections = self.numconnections - 1
 			i = i - 1
 		end
 	end
+end
+
+local function clean(self, wasCleanExit, code, reason)
+	if not wasCleanExit and self.errorcallback ~= nil then
+		self.errorcallback(self, "websocket close error: " .. tostring(reason))
+	end
+
+	self:ShutdownInternal(code, reason)
+
+	return false, reason or "closed", wasCleanExit, code
+end
+
+function CONNECTION:ReadFrame()
+	-- https://github.com/lipp/lua-websockets/blob/cafb5874473ab9f54e734c123b18fb059801e4d5/src/websocket/sync.lua#L8-L75
+	--[[
+		Copyright (c) 2012 by Gerhard Lipp <gelipp@gmail.com>
+
+		Permission is hereby granted, free of charge, to any person obtaining a copy
+		of this software and associated documentation files (the "Software"), to deal
+		in the Software without restriction, including without limitation the rights
+		to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+		copies of the Software, and to permit persons to whom the Software is
+		furnished to do so, subject to the following conditions:
+
+		The above copyright notice and this permission notice shall be included in
+		all copies or substantial portions of the Software.
+
+		THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+		IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+		FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+		AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+		LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+		OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+		THE SOFTWARE.
+	]]
+
+	if self.is_closing then
+		return false, "closing"
+	end
+
+	local messages = {}
+
+	local startOpcode
+	local readFrames
+	local bytesToRead = 2
+	local encodedMsg = ""
+
+	while true do
+		local chunk, recErr = self:ReceiveEx(bytesToRead - #encodedMsg)
+		if chunk == nil then
+			return clean(self, false, 1006, recErr)
+		end
+
+		encodedMsg = encodedMsg .. chunk
+
+		local decoded, length, opcode, masked, fin, mask, headerLen = DecodeHeader(encodedMsg)
+		if decoded then
+			chunk, recErr = self:ReceiveEx(length - (#encodedMsg - headerLen))
+
+			if #encodedMsg > headerLen then
+				chunk = encodedMsg:sub(headerLen + 1, -1) .. chunk
+			end
+
+			if masked then
+				chunk = XORMask(chunk, mask)
+			end
+
+			assert(not recErr, "ReadFrame() -> ReceiveEx() error")
+			if opcode == frame.CLOSE then
+				if not self.is_closing then
+					self.is_closing = true
+
+					local code, reason = DecodeClose(decoded)
+					local closeFrame = EncodeClose(code, reason)
+					local fullCloseFrame = Encode(closeFrame, frame.CLOSE, false, true)
+
+					local sentLen, sendErr = self.socket:send(fullCloseFrame)
+					if sendErr or sentLen ~= #fullCloseFrame then
+						return clean(self, false, code, sendErr)
+					else
+						return clean(self, true, code, reason)
+					end
+				else
+					return false, "closed"
+				end
+			elseif opcode == frame.PING then
+				local pongFrame = Encode(decoded, frame.PONG, false, true)
+
+				local sentLen, sendErr = self.socket:send(pongFrame)
+				if sendErr or sentLen ~= #pongFrame then
+					return clean(self, false, code, sendErr)
+				end
+
+				messages[#messages + 1] = {
+					decoded = decoded,
+					opcode = opcode,
+					masked = masked,
+					fin = fin,
+				}
+			elseif opcode == frame.PONG then
+				messages[#messages + 1] = {
+					decoded = decoded,
+					opcode = opcode,
+					masked = masked,
+					fin = fin,
+				}
+			end
+
+			if not startOpcode then
+				startOpcode = opcode
+			end
+
+			if not fin then
+				if not readFrames then
+					readFrames = {}
+				elseif opcode ~= frame.CONTINUATION then
+					return clean(self, false, 1002, "protocol error")
+				end
+
+				bytesToRead = 3
+				encodedMsg = ""
+				insert(readFrames, decoded)
+			elseif not readFrames then
+				messages[#messages + 1] = {
+					decoded = decoded,
+					opcode = startOpcode,
+					masked = masked,
+					fin = fin,
+				}
+				return true, messages
+			else
+				insert(readFrames, decoded)
+				messages[#messages + 1] = {
+					decoded = concat(readFrames),
+					opcode = startOpcode,
+					masked = masked,
+					fin = fin,
+				}
+				return true, messages
+			end
+		else
+			assert(type(length) == "number" and length > 0)
+			bytesToRead = length
+		end
+	end
+
+	error("should never be reached")
 end
 
 function websocket.CreateServer(addr, port, queue) -- non-blocking and max queue of 5 by default
@@ -330,7 +460,7 @@ function websocket.CreateServer(addr, port, queue) -- non-blocking and max queue
 		connections = {}
 	}, SERVER)
 	server.socket:settimeout(0)
-	assert(server.socket:bind(addr, port) == 1,"failed to bind address/port")
+	assert(server.socket:bind(addr, port) == 1, "failed to bind address/port")
 	server.socket:listen(queue or 5)
 
 	hook_Add("Think", server, SERVER.Think)
