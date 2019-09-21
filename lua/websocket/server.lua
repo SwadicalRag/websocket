@@ -370,9 +370,11 @@ function CONNECTION:ReadFrame()
 			end
 
 			assert(not recErr, "ReadFrame() -> ReceiveEx() error")
+
+			local messageBody = chunk
 			if opcode == frame.CLOSE then
 				if not self.is_closing then
-					local code, reason = DecodeClose(decoded)
+					local code, reason = DecodeClose(messageBody)
 					local closeFrame = EncodeClose(code, reason)
 					local fullCloseFrame = Encode(closeFrame, frame.CLOSE, false, true)
 
@@ -386,7 +388,7 @@ function CONNECTION:ReadFrame()
 					return false, "closed"
 				end
 			elseif opcode == frame.PING then
-				local pongFrame = Encode(decoded, frame.PONG, false, true)
+				local pongFrame = Encode(messageBody, frame.PONG, false, true)
 
 				local sentLen, sendErr = self.socket:send(pongFrame)
 				if sendErr or sentLen ~= #pongFrame then
@@ -394,14 +396,14 @@ function CONNECTION:ReadFrame()
 				end
 
 				messages[#messages + 1] = {
-					decoded = decoded,
+					decoded = messageBody,
 					opcode = opcode,
 					masked = masked,
 					fin = fin,
 				}
 			elseif opcode == frame.PONG then
 				messages[#messages + 1] = {
-					decoded = decoded,
+					decoded = messageBody,
 					opcode = opcode,
 					masked = masked,
 					fin = fin,
@@ -421,17 +423,17 @@ function CONNECTION:ReadFrame()
 
 				bytesToRead = 3
 				encodedMsg = ""
-				insert(readFrames, decoded)
+				insert(readFrames, messageBody)
 			elseif not readFrames then
 				messages[#messages + 1] = {
-					decoded = decoded,
+					decoded = messageBody,
 					opcode = startOpcode,
 					masked = masked,
 					fin = fin,
 				}
 				return true, messages
 			else
-				insert(readFrames, decoded)
+				insert(readFrames, messageBody)
 				messages[#messages + 1] = {
 					decoded = concat(readFrames),
 					opcode = startOpcode,
