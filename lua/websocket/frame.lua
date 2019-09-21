@@ -152,17 +152,6 @@ function frame.Encode(data, opcode, masked, fin)
 	return frame.EncodeHeader(#data, opcode, mask, fin) .. data
 end
 
-function frame.Decode(data)
-	local complete, _, opcode, masked, fin, mask = frame.DecodeHeader(data)
-	assert(complete, "received an incomplete websocket frame to decode")
-
-	if masked then
-		data = websocket.utilities.XORMask(data, mask)
-	end
-
-	return data, fin, opcode, extradata
-end
-
 function frame.EncodeClose(code, reason)
 	local out = char(
 		band(rshift(code, 8), 0xFF),
