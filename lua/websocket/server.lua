@@ -247,7 +247,7 @@ function SERVER:Think()
 
 	for i = 1, self.numconnections do
 		local connection = self.connections[i]
-		while #connection.sendBuffer > 0 do
+		while #connection.sendBuffer > 0 and IsValid(connection) do
 			local toSend = connection.sendBuffer[1]
 			local sentLen, err = connection.socket:send(toSend)
 
