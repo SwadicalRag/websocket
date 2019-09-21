@@ -295,11 +295,15 @@ function SERVER:Think()
 
 	for i = 1, self.numconnections do
 		local connection = self.connections[i]
-		connection:Think()
-		if connection:GetState() == CLOSED or connection.socket == nil then
-			remove(self.connections, i)
+		if connection then
+			connection:Think()
+			if connection:GetState() == CLOSED or connection.socket == nil then
+				remove(self.connections, i)
+				self.numconnections = self.numconnections - 1
+				i = i - 1
+			end
+		else
 			self.numconnections = self.numconnections - 1
-			i = i - 1
 		end
 	end
 end
