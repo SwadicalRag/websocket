@@ -306,7 +306,9 @@ end
 
 local function clean(self, wasCleanExit, code, reason)
 	if not wasCleanExit and self.errorcallback ~= nil then
-		self.errorcallback(self, "websocket close error: " .. tostring(reason))
+		if self.state ~= CLOSED then
+			self.errorcallback(self, "websocket close error: " .. tostring(reason))
+		end
 	end
 
 	self:ShutdownInternal(code, reason)
