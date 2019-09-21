@@ -372,8 +372,6 @@ function CONNECTION:ReadFrame()
 			assert(not recErr, "ReadFrame() -> ReceiveEx() error")
 			if opcode == frame.CLOSE then
 				if not self.is_closing then
-					self.is_closing = true
-
 					local code, reason = DecodeClose(decoded)
 					local closeFrame = EncodeClose(code, reason)
 					local fullCloseFrame = Encode(closeFrame, frame.CLOSE, false, true)
