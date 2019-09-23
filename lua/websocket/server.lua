@@ -174,6 +174,8 @@ function CONNECTION:ThinkFactory()
 						))
 					)
 					self.state = self.socket:send(key) == #key and OPEN or CLOSED
+
+					return true
 				else
 					-- could do a callback to allow the user to customise the response
 					-- but this is a **websocket** server library, not a http server library
@@ -188,13 +190,13 @@ function CONNECTION:ThinkFactory()
 					self.socket = nil
 				end
 			end
+
+			return false
 		else
 			if self.errorcallback then
 				self.errorcallback(self, "websocket auth error: " .. err)
 			end
 		end
-
-		return true
 	elseif self.state == OPEN then
 		local suc, messages = self:ReadFrame()
 		if suc then
@@ -247,7 +249,7 @@ function SERVER:Think()
 
 	for i = 1, self.numconnections do
 		local connection = self.connections[i]
-		while #connection.sendBuffer > 0 and IsValid(connection) do
+		while #connection.sendBuffer > 0 and IsValid(connection) and (connection.state ~= CLOSED) do
 			local toSend = connection.sendBuffer[1]
 			local sentLen, err = connection.socket:send(toSend)
 
