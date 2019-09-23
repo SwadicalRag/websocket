@@ -222,13 +222,13 @@ function SERVER:SetAcceptCallback(func)
 	self.acceptcallback = func
 end
 
-function SERVER:Shutdown(code,reason)
+function SERVER:Shutdown(code, reason)
 	if not self:IsValid() then
 		return
 	end
 
 	for i = 1, self.numconnections do
-		self.connections[i]:ShutdownInternal(code,reason)
+		self.connections[i]:ShutdownInternal(code, reason)
 	end
 
 	self.socket:shutdown("both")
