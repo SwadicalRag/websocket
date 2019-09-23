@@ -68,11 +68,11 @@ function CONNECTION:ShutdownInternal(code, reason)
 
 	self.state = CLOSED
 
-	if self.socket ~= nil then
-		self.socket:shutdown("both")
-		self.socket:close()
-		self.socket = nil
-	end
+	-- self:IsValid() must return true if this block is executed
+	-- therefore self.socket still is non-nil
+	self.socket:shutdown("both")
+	self.socket:close()
+	self.socket = nil
 end
 
 function CONNECTION:IsValid()
@@ -249,7 +249,7 @@ function SERVER:Think()
 
 	for i = 1, self.numconnections do
 		local connection = self.connections[i]
-		while #connection.sendBuffer > 0 and IsValid(connection) and (connection.state ~= CLOSED) do
+		while IsValid(connection) and (connection.state ~= CLOSED) and (#connection.sendBuffer > 0) do
 			local toSend = connection.sendBuffer[1]
 			local sentLen, err = connection.socket:send(toSend)
 
@@ -299,7 +299,7 @@ function SERVER:Think()
 		local connection = self.connections[i]
 		if connection ~= nil then
 			connection:Think()
-			if connection:GetState() == CLOSED or connection.socket == nil then
+			if IsValid(connection) and connection:GetState() == CLOSED then
 				remove(self.connections, i)
 				self.numconnections = self.numconnections - 1
 				i = i - 1
