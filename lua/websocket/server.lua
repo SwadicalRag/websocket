@@ -253,7 +253,7 @@ function SERVER:Think()
 			local toSend = connection.sendBuffer[1]
 			local sentLen, err = connection.socket:send(toSend)
 
-			if err then
+			if sentLen == nil then
 				if connection.errorcallback ~= nil then
 					connection.errorcallback(connection, "websocket auth error: " .. err)
 				end
