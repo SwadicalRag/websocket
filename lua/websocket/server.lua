@@ -62,7 +62,7 @@ function CONNECTION:ShutdownInternal(code, reason)
 
 	self.is_closing = true
 
-	if self.closecallback then
+	if self.closecallback ~= nil then
 		self.closecallback(self, code, reason)
 	end
 
@@ -193,14 +193,14 @@ function CONNECTION:ThinkFactory()
 
 			return false
 		else
-			if self.errorcallback then
+			if self.errorcallback ~= nil then
 				self.errorcallback(self, "websocket auth error: " .. err)
 			end
 		end
 	elseif self.state == OPEN then
 		local suc, messages = self:ReadFrame()
 		if suc then
-			if self.recvcallback then
+			if self.recvcallback ~= nil then
 				for i = 1, #messages do
 					local msg = messages[i]
 					self.recvcallback(self, msg.decoded, msg.opcode, msg.masked, msg.fin)
@@ -254,7 +254,7 @@ function SERVER:Think()
 			local sentLen, err = connection.socket:send(toSend)
 
 			if err then
-				if connection.errorcallback then
+				if connection.errorcallback ~= nil then
 					connection.errorcallback(connection, "websocket auth error: " .. err)
 				end
 			elseif #toSend == sentLen then
@@ -297,7 +297,7 @@ function SERVER:Think()
 
 	for i = 1, self.numconnections do
 		local connection = self.connections[i]
-		if connection then
+		if connection ~= nil then
 			connection:Think()
 			if connection:GetState() == CLOSED or connection.socket == nil then
 				remove(self.connections, i)
